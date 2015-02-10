@@ -61,6 +61,10 @@ uint8_t usart_read(char *buff){
         strncpy(rx_buff, &rx_buff[i+2], USART_BUFF_MAX);
         rx_buff_pos = 0;
         return 0;
+      }else if(rx_buff_pos == USART_BUFF_MAX){
+        memset(rx_buff, 0, USART_BUFF_MAX);
+        rx_buf_pos = 0;
+        return 1;
       }else{
         buff[i] = rx_buff[i];
       }
