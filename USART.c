@@ -7,8 +7,8 @@
 
 static char rx_buff[USART_BUFF_MAX];
 static char tx_buff[USART_BUFF_MAX+3];
-volatile static uint8_t rx_buff_pos = 0;
-volatile static uint8_t tx_buff_pos = 0;
+static volatile uint8_t rx_buff_pos = 0;
+static volatile uint8_t tx_buff_pos = 0;
 
 ISR(USART_RXC_vect){
   if(rx_buff_pos <= USART_BUFF_MAX){
@@ -63,7 +63,7 @@ uint8_t usart_read(char *buff){
         return 0;
       }else if(rx_buff_pos == USART_BUFF_MAX){
         memset(rx_buff, 0, USART_BUFF_MAX);
-        rx_buf_pos = 0;
+        rx_buff_pos = 0;
         return 1;
       }else{
         buff[i] = rx_buff[i];
