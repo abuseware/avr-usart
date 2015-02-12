@@ -5,10 +5,10 @@
 #include "USART.h"
 #include <util/setbaud.h>
 
+static char tx_buff[USART_BUFF_MAX+2];
 static char rx_buff[USART_BUFF_MAX];
-static char tx_buff[USART_BUFF_MAX+3];
-static volatile uint8_t rx_buff_pos = 0;
 static volatile uint8_t tx_buff_pos = 0;
+static volatile uint8_t rx_buff_pos = 0;
 
 ISR(USART_RXC_vect){
   if(rx_buff_pos <= USART_BUFF_MAX){
@@ -17,15 +17,19 @@ ISR(USART_RXC_vect){
     UDR = rx_buff[rx_buff_pos];
     #endif
     rx_buff_pos++;
+  }else{
+    memset(rx_buff, 0, USART_BUFF_MAX);
+    rx_buff_pos = 0;
   }
 }
 
 ISR(USART_UDRE_vect){
-  if(tx_buff[tx_buff_pos] != 0){
+  if(tx_buff[tx_buff_pos]){
     UDR = tx_buff[tx_buff_pos++];
   }else{
-    UCSRB &= ~(1<<UDRIE);
+    memset(tx_buff, 0, USART_BUFF_MAX);
     tx_buff_pos = 0;
+    UCSRB &= ~(1<<UDRIE);
   }
 }
 
@@ -48,7 +52,7 @@ void usart_stop(void){
 
 void usart_write(char *data){
   while(!((UCSRA & (1<<UDRIE))));
-  strncpy(tx_buff, data, USART_BUFF_MAX);
+  strncpy(tx_buff, data, USART_BUFF_MAX-3);
   strcat(tx_buff, "\r\n");
   UCSRB |= (1<<UDRIE);
 }
@@ -61,10 +65,6 @@ uint8_t usart_read(char *buff){
         strncpy(rx_buff, &rx_buff[i+2], USART_BUFF_MAX);
         rx_buff_pos = 0;
         return 0;
-      }else if(rx_buff_pos == USART_BUFF_MAX){
-        memset(rx_buff, 0, USART_BUFF_MAX);
-        rx_buff_pos = 0;
-        return 1;
       }else{
         buff[i] = rx_buff[i];
       }
