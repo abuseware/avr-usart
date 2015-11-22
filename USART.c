@@ -1,75 +1,90 @@
-#include <string.h>
-#include <avr/io.h>
-#include <avr/interrupt.h> 
+#include <avr/interrupt.h>
 
 #include "USART.h"
 #include <util/setbaud.h>
 
-static char tx_buff[USART_BUFF_MAX+2];
-static char rx_buff[USART_BUFF_MAX];
-static volatile uint8_t tx_buff_pos = 0;
-static volatile uint8_t rx_buff_pos = 0;
+#include "ringbuffer/ringbuffer.h"
 
-ISR(USART_RXC_vect){
-  if(rx_buff_pos <= USART_BUFF_MAX){
-    rx_buff[rx_buff_pos] = UDR;
-    #ifdef USART_ECHO
-    UDR = rx_buff[rx_buff_pos];
-    #endif
-    rx_buff_pos++;
-  }else{
-    memset(rx_buff, 0, USART_BUFF_MAX);
-    rx_buff_pos = 0;
+//Handler for user defined callback
+static void (*usart_receive_cb)(void);
+
+//Buffers
+static ring_buffer_t* rx_buff;
+static ring_buffer_t* tx_buff;
+
+//Data receive interrupt
+ISR(USART_RX_vect) {
+  uint8_t buff = UDR0;
+
+	ring_buffer_write(rx_buff, buff);
+
+  //Whole packet received?
+  if(buff == '\n') {
+    usart_receive_cb();
   }
 }
 
-ISR(USART_UDRE_vect){
-  if(tx_buff[tx_buff_pos]){
-    UDR = tx_buff[tx_buff_pos++];
-  }else{
-    memset(tx_buff, 0, USART_BUFF_MAX);
-    tx_buff_pos = 0;
-    UCSRB &= ~(1<<UDRIE);
+//Data send interrupt
+ISR(USART_UDRE_vect) {
+	uint8_t buff;
+
+	//Fill registry with data byte
+	if(!ring_buffer_read(tx_buff, &buff)) {
+		UDR0 = buff;
+	} else {
+		UCSR0B &= ~(1<<UDRIE0);
   }
 }
 
-void usart_start(void){
-  UBRRH = UBRRH_VALUE;
-  UBRRL = UBRRL_VALUE;
+//Start USART with user defined callback
+void usart_start(void (*receive_cb)(void)) {
+  //Set USART parameters (from setbaud.h)
+  UBRR0H = UBRRH_VALUE;
+  UBRR0L = UBRRL_VALUE;
   #if USE_2X
-    UCSRA |=  (1<<U2X);
+  UCSR0A |=  (1<<U2X0);
   #else
-    UCSRA &= ~(1<<U2X);
+  UCSR0A &= ~(1<<U2X0);
   #endif
 
-  UCSRC = (1<<URSEL) | (1<<UCSZ1) | (1<<UCSZ0);
-  UCSRB = (1<<TXEN) | (1<<RXEN) | (1<<RXCIE);
+  //Promote callback
+  usart_receive_cb = receive_cb;
+
+  //Enable USART
+  UCSR0C = (1<<UCSZ01) | (1<<UCSZ00);
+  UCSR0B = (1<<TXEN0) | (1<<RXEN0) | (1<<RXCIE0);
+
+	rx_buff = ring_buffer_create(USART_BUFFER_SIZE);
+  tx_buff = ring_buffer_create(USART_BUFFER_SIZE);
 }
 
-void usart_stop(void){
-  UCSRB &= ~( (1<<TXEN) | (1<<RXEN) | (1<<RXCIE) | (1<<UDRIE));
+//Disable USART and destroy transmission buffer
+void usart_stop(void) {
+  UCSR0B &= ~( (1<<TXEN0) | (1<<RXEN0) | (1<<RXCIE0) | (1<<UDRIE0));
+	ring_buffer_destroy(rx_buff);
+  ring_buffer_destroy(tx_buff);
 }
 
-void usart_write(char *data){
-  while(!((UCSRA & (1<<UDRIE))));
-  strncpy(tx_buff, data, USART_BUFF_MAX-3);
-  strcat(tx_buff, "\r\n");
-  UCSRB |= (1<<UDRIE);
+uint8_t usart_receive(uint8_t* data) {
+  uint8_t buff;
+  uint8_t i = 0;
+  while(!ring_buffer_read(rx_buff, &buff)) {
+    data[i++] = buff;
+  }
+
+  return i;
 }
-    
-uint8_t usart_read(char *buff){
-  if(rx_buff_pos > 0){
-    for(uint8_t i = 0; i <= rx_buff_pos; i++){
-      if(rx_buff[i] == '\r' && rx_buff[i+1] == '\n'){
-        buff[i] = 0;
-        strncpy(rx_buff, &rx_buff[i+2], USART_BUFF_MAX);
-        rx_buff_pos = 0;
-        return 0;
-      }else{
-        buff[i] = rx_buff[i];
-      }
+
+//Put packet into ring buffer
+uint8_t usart_send(const uint8_t* data, const uint8_t len) {
+  uint8_t ret = 0;
+  for(uint8_t i = 0; i < len; i++) {
+    if(ring_buffer_write(tx_buff, data[i])) {
+      ret = 1;
+      break;
     }
   }
-  return 1;
-}
 
+  UCSR0B |= (1<<UDRIE0);
+  return ret;
+}

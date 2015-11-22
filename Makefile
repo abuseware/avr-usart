@@ -1,14 +1,22 @@
-CFLAGS=-Os -std=c99 -pedantic -Wall -Wextra -mmcu=atmega8a -DF_CPU=8000000UL
-LDFLAGS=-Wl,-O1,-s,--sort-common,--as-needed
+MCU=atmega328p
+FREQ=16000000UL
 
-all: lib test
+CC=avr-gcc
+AVRDUDE=avrdude
 
-lib:
-	avr-gcc ${CFLAGS} -c USART.c -o USART.o
+CFLAGS=-O3 -Wl,-s -std=c11 -pedantic -mmcu=$(MCU) -DF_CPU=$(FREQ)
 
-test: lib
-	avr-gcc ${CFLAGS} ${LDFLAGS} USART.o USART_test.c -o USART_test.bin
-	avr-objcopy -O ihex USART_test.bin USART_test.hex
+OBJ=USART_test.o USART.o ringbuffer/ringbuffer.o
 
-flash: test
-	avrdude -c usbasp -p m8 -U flash:w:USART_test.hex
+.PHONY: all clean flash main
+
+all: $(HDR) $(OBJ) USART_test
+
+clean:
+	-rm -f *.o USART_test ringbuffer/*.o
+
+flash:
+	$(AVRDUDE) -c usbasp -p m328p -U flash:w:USART_test
+
+USART_test:
+	$(CC) $(CFLAGS) -o $@ $(OBJ)
