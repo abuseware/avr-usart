@@ -1,1 +1,1 @@
-ringbuffer = [git]https://github.com/abuseware/ringbuffer
+ringbuffer = [hg]https://bitbucket.org/licho/ringbuffer
